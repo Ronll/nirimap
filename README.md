@@ -185,8 +185,10 @@ Two display modes control what the minimap shows:
 
 In `all` mode the total widget height grows with the number of workspaces, capped at `max_height_percent` of the monitor's height. When the cap is hit, per-workspace rows shrink proportionally to fit.
 
-An empty workspace (shown in `all` mode only while it's active) is drawn as an outlined, screen-sized
-square in `border_color`, so it reads as "nothing here" rather than a blank row.
+An empty workspace is drawn as one screen-sized tile with no icon (in `focused_color` when it's the active
+one), so it reads as "nothing here" rather than a blank row. By default `all` mode shows an empty workspace
+only while it's active; set `show_empty_workspaces = true` to always show them (including niri's trailing
+empty workspace).
 
 ### Centered Viewport
 

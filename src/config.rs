@@ -48,6 +48,9 @@ pub struct DisplayConfig {
     /// vertically) and move the windows behind it, instead of fitting the
     /// widget to the content.
     pub center_viewport: bool,
+    /// In `all` mode, give empty workspaces a row too (drawn as one empty
+    /// screen tile), not only the active one.
+    pub show_empty_workspaces: bool,
 }
 
 impl Default for DisplayConfig {
@@ -61,6 +64,7 @@ impl Default for DisplayConfig {
             margin_y: 10,
             workspace_mode: WorkspaceMode::default(),
             center_viewport: false,
+            show_empty_workspaces: false,
         }
     }
 }
@@ -362,6 +366,8 @@ workspace_mode = "all"    # Which workspaces to show:
 center_viewport = false   # Keep the viewport centered and scroll the windows behind it,
                           # so the focused window stays at a fixed spot (widget grows to
                           # fit content on both sides, up to max_width/height_percent)
+show_empty_workspaces = false # "all" mode: show empty workspaces as an empty screen tile
+                              # (otherwise only the active one, if it's empty)
 
 [appearance]
 background = "#1e1e2e"    # Background color (hex)
@@ -466,6 +472,7 @@ mod tests {
         assert_eq!(config.display.margin_y, 10);
         assert_eq!(config.display.workspace_mode, WorkspaceMode::All);
         assert!(!config.display.center_viewport);
+        assert!(!config.display.show_empty_workspaces);
 
         assert_eq!(config.appearance.background, "#1e1e2e");
         assert_eq!(config.appearance.window_color, "#45475a");
@@ -593,6 +600,10 @@ mod tests {
         assert_eq!(
             config.display.center_viewport,
             defaults.display.center_viewport
+        );
+        assert_eq!(
+            config.display.show_empty_workspaces,
+            defaults.display.show_empty_workspaces
         );
         assert_eq!(config.appearance.background, defaults.appearance.background);
         assert_eq!(config.labels.enabled, defaults.labels.enabled);

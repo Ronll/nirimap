@@ -392,12 +392,19 @@ struct WorkspaceLayout<'a> {
 
 /// Workspaces shown in `all` mode: those with windows, plus the focused one.
 /// This hides Niri's trailing empty placeholder workspace unless the user is on it.
-fn all_mode_rows(state: &MinimapState, viewport_width: f64) -> Vec<WorkspaceLayout<'_>> {
+/// With `show_empty_workspaces`, every workspace.
+fn all_mode_rows<'a>(
+    state: &'a MinimapState,
+    display: &DisplayConfig,
+    viewport_width: f64,
+) -> Vec<WorkspaceLayout<'a>> {
     let active_id = state.active_workspace_id;
     state
         .workspaces_sorted()
         .into_iter()
-        .filter(|ws| !ws.windows.is_empty() || Some(ws.id) == active_id)
+        .filter(|ws| {
+            display.show_empty_workspaces || !ws.windows.is_empty() || Some(ws.id) == active_id
+        })
         .map(|ws| build_workspace_layout(ws, viewport_width))
         .collect()
 }
@@ -674,7 +681,7 @@ fn compute_widget_dimensions(
             }
         }
         WorkspaceMode::All => {
-            let rows = all_mode_rows(state, viewport_width);
+            let rows = all_mode_rows(state, display, viewport_width);
             let geom = compute_all_mode_geometry(
                 &rows,
                 display,
@@ -775,7 +782,7 @@ fn draw_current_workspace(
     let row_height = (height - PADDING * 2.0).max(0.0);
     if !layout.has_tiled {
         if row_width > 0.0 && row_height > 0.0 {
-            draw_empty_screen(ctx, PADDING, PADDING, row_width, row_height);
+            draw_empty_screen(ctx, PADDING, PADDING, row_width, row_height, true);
         }
         return;
     }
@@ -817,7 +824,7 @@ fn draw_all_workspaces(
     let cr = ctx.cr;
     let appearance = &ctx.config.appearance;
 
-    let rows = all_mode_rows(state, viewport_width);
+    let rows = all_mode_rows(state, &ctx.config.display, viewport_width);
     if rows.is_empty() {
         return;
     }
@@ -859,15 +866,15 @@ fn draw_all_workspaces(
         }
 
         if !layout.has_tiled && row_width > 0.0 && geom.row_height > 0.0 {
-            // Empty workspace: outline the screen where its windows would be, at the shared
-            // scale (tiles are full height, so a screen is `row_height` tall). With no windows
-            // anywhere there is no scale, so fill the row.
+            // Empty workspace: one tile the size of the screen where its windows would be, at
+            // the shared scale (tiles are full height, so a screen is `row_height` tall). With
+            // no windows anywhere there is no scale, so fill the row.
             let (x, w) = if geom.scale > 0.0 {
                 (geom.viewport_anchor_x, viewport_width * geom.scale)
             } else {
                 (PADDING, row_width)
             };
-            draw_empty_screen(ctx, x, y, w, geom.row_height);
+            draw_empty_screen(ctx, x, y, w, geom.row_height, layout.workspace.is_active);
         } else if layout.has_tiled && geom.scale > 0.0 && row_width > 0.0 && geom.row_height > 0.0 {
             // Screen x of workspace-x = 0.
             let x_origin = geom.viewport_anchor_x - layout.align_x * geom.scale;
@@ -950,27 +957,39 @@ fn draw_tiled_windows(
     }
 }
 
-/// Outline of an empty screen (a workspace with no tiled windows), inset by
-/// half the tile gap like a tile, so it's clear the workspace is empty rather
-/// than that the minimap failed to draw.
-fn draw_empty_screen(ctx: &DrawCtx<'_>, x: f64, y: f64, w: f64, h: f64) {
+/// An empty workspace's screen, drawn like a window tile with no icon (in the
+/// focused colour on the active workspace, where the user is), so it's clear
+/// the workspace is empty rather than that the minimap failed to draw.
+fn draw_empty_screen(ctx: &DrawCtx<'_>, x: f64, y: f64, w: f64, h: f64, active: bool) {
     let cr = ctx.cr;
     let appearance = &ctx.config.appearance;
-    let border = ctx.palette.border;
+    let palette = ctx.palette;
     let half_gap = appearance.gap / 2.0;
-    let line = appearance.border_width.max(1.0);
-    let inset = half_gap + line / 2.0;
-    cr.set_source_rgba(border.r, border.g, border.b, border.a);
-    cr.set_line_width(line);
-    rounded_rectangle(
-        cr,
-        x + inset,
-        y + inset,
-        (w - inset * 2.0).max(1.0),
-        (h - inset * 2.0).max(1.0),
-        appearance.border_radius,
-    );
-    cr.stroke().ok();
+    let (x, y) = (x + half_gap, y + half_gap);
+    let w = (w - appearance.gap).max(1.0);
+    let h = (h - appearance.gap).max(1.0);
+
+    let (fill_color, fill_alpha) = if active {
+        (palette.focused, appearance.focused_opacity)
+    } else {
+        (palette.window, appearance.window_opacity)
+    };
+    if fill_alpha > 0.0 {
+        cr.set_source_rgba(fill_color.r, fill_color.g, fill_color.b, fill_alpha);
+        rounded_rectangle(cr, x, y, w, h, appearance.border_radius);
+        cr.fill().ok();
+    }
+    if appearance.border_width > 0.0 {
+        cr.set_source_rgba(
+            palette.border.r,
+            palette.border.g,
+            palette.border.b,
+            palette.border.a,
+        );
+        cr.set_line_width(appearance.border_width);
+        rounded_rectangle(cr, x, y, w, h, appearance.border_radius);
+        cr.stroke().ok();
+    }
 }
 
 /// Trace a rounded-rectangle path (no fill or stroke).
@@ -1074,6 +1093,34 @@ mod tests {
 
     fn assert_close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} != {b}");
+    }
+
+    #[test]
+    fn test_all_mode_rows_empty_workspaces() {
+        // Workspace 1 has windows, 2 is empty, 3 is empty and active.
+        let mut state = MinimapState::new();
+        let mut empty = workspace(2, 2, false, 0);
+        empty.windows.clear();
+        let mut active_empty = workspace(3, 3, true, 0);
+        active_empty.windows.clear();
+        for ws in [workspace(1, 1, false, 0), empty, active_empty] {
+            state.workspaces.insert(ws.id, ws);
+        }
+        state.active_workspace_id = Some(3);
+        let ids = |display: &DisplayConfig| -> Vec<u64> {
+            all_mode_rows(&state, display, VIEWPORT)
+                .iter()
+                .map(|l| l.workspace.id)
+                .collect()
+        };
+
+        // Default: empty workspaces only when active.
+        assert_eq!(ids(&display(false)), vec![1, 3]);
+        let show = DisplayConfig {
+            show_empty_workspaces: true,
+            ..display(false)
+        };
+        assert_eq!(ids(&show), vec![1, 2, 3]);
     }
 
     #[test]
