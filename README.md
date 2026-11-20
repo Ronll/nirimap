@@ -220,6 +220,17 @@ When `always_visible = false`, the minimap will show temporarily when:
 - Window focus changes (to a different window)
 - Workspace is switched
 - Window layouts change (resize, move between columns)
+- It receives `SIGUSR1` (`pkill -USR1 -x nirimap`)
+
+Focus moving to no window (a layer-shell panel, launcher or lock screen taking the keyboard) doesn't show
+it, and neither does focus returning to the same window when the panel closes.
+
+`SIGUSR1` is for moves niri reports with no event, such as focus hitting the end of the column. Bind the
+move and the signal together, e.g. in niri:
+
+```kdl
+Mod+J { spawn-sh "niri msg action focus-window-or-workspace-down; pkill -USR1 -x nirimap"; }
+```
 
 The minimap hides automatically after `hide_timeout_ms` milliseconds.
 

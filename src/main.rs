@@ -103,6 +103,15 @@ fn activate(app: &gtk4::Application, config: Rc<RefCell<Config>>) -> Result<()> 
     });
 
     // present() is required for layer-shell.
+    // SIGUSR1 shows the minimap (`pkill -USR1 nirimap`), e.g. from a compositor bind after a focus
+    // move that hit the edge, which niri reports with no event.
+    let minimap_for_signal = minimap.clone();
+    glib_unix::unix_signal_add_local(libc::SIGUSR1, move || {
+        tracing::debug!("SIGUSR1: show");
+        minimap_for_signal.show();
+        glib::ControlFlow::Continue
+    });
+
     window.present();
 
     if !config.borrow().behavior.always_visible {

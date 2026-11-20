@@ -88,26 +88,34 @@ impl MinimapWidget {
     /// Show if focus moved to a different window than the one that last
     /// triggered a show. Returns whether it was shown.
     ///
+    /// Focus to no window (`None`) never shows: niri reports it whenever a
+    /// layer-shell surface such as a bar panel or launcher takes the keyboard.
+    /// It also leaves `last_shown_focus_id` alone, so focus returning to the
+    /// same window when the panel closes doesn't show either.
+    ///
     /// With `show_for_floating_windows` off, floating windows neither show the
     /// minimap nor advance `last_shown_focus_id`, so returning focus from a
     /// popup to the previous tile doesn't re-trigger a show.
     pub fn show_on_focus_change(&self, window_id: Option<u64>) -> bool {
-        let last_id = self.last_shown_focus_id.get();
-
-        if window_id == last_id {
+        let Some(id) = window_id else {
+            return false;
+        };
+        let is_floating = self
+            .state
+            .borrow()
+            .find_window(id)
+            .is_some_and(|w| w.is_floating);
+        let show_floating = self.config.borrow().behavior.show_for_floating_windows;
+        if !focus_change_shows(
+            self.last_shown_focus_id.get(),
+            id,
+            is_floating,
+            show_floating,
+        ) {
             return false;
         }
 
-        if !self.config.borrow().behavior.show_for_floating_windows {
-            let is_floating = window_id
-                .and_then(|id| self.state.borrow().find_window(id).map(|w| w.is_floating))
-                .unwrap_or(false);
-            if is_floating {
-                return false;
-            }
-        }
-
-        self.last_shown_focus_id.set(window_id);
+        self.last_shown_focus_id.set(Some(id));
         self.show();
         true
     }
@@ -962,6 +970,12 @@ fn rounded_rectangle(cr: &Context, x: f64, y: f64, width: f64, height: f64, radi
     cr.close_path();
 }
 
+/// Whether focus moving to window `id` should show the minimap, given the
+/// window that last triggered a show.
+fn focus_change_shows(last: Option<u64>, id: u64, is_floating: bool, show_floating: bool) -> bool {
+    last != Some(id) && (show_floating || !is_floating)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1021,6 +1035,17 @@ mod tests {
 
     fn assert_close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} != {b}");
+    }
+
+    #[test]
+    fn test_focus_change_shows() {
+        // A different tiled window shows; the same one doesn't.
+        assert!(focus_change_shows(Some(1), 2, false, false));
+        assert!(!focus_change_shows(Some(1), 1, false, false));
+        assert!(focus_change_shows(None, 1, false, false));
+        // Floating windows only with show_for_floating_windows.
+        assert!(!focus_change_shows(Some(1), 2, true, false));
+        assert!(focus_change_shows(Some(1), 2, true, true));
     }
 
     #[test]
