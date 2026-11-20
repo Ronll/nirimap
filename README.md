@@ -185,6 +185,9 @@ Two display modes control what the minimap shows:
 
 In `all` mode the total widget height grows with the number of workspaces, capped at `max_height_percent` of the monitor's height. When the cap is hit, per-workspace rows shrink proportionally to fit.
 
+An empty workspace (shown in `all` mode only while it's active) is drawn as an outlined, screen-sized
+square in `border_color`, so it reads as "nothing here" rather than a blank row.
+
 ### Centered Viewport
 
 By default the widget is sized to fit the windows, so as you scroll through a workspace the focused window moves around inside the minimap. With `center_viewport = true` the viewport (the part of the strip that is on screen) stays in the middle of the widget and the windows slide behind it, the way Niri's scrolling layout feels: whatever is on screen is always at the same spot in the minimap.

@@ -773,6 +773,12 @@ fn draw_current_workspace(
     let layout = build_workspace_layout(workspace, viewport_width);
     let row_width = (width - PADDING * 2.0).max(0.0);
     let row_height = (height - PADDING * 2.0).max(0.0);
+    if !layout.has_tiled {
+        if row_width > 0.0 && row_height > 0.0 {
+            draw_empty_screen(ctx, PADDING, PADDING, row_width, row_height);
+        }
+        return;
+    }
     if layout.total_width <= 0.0 || layout.max_height <= 0.0 || row_height <= 0.0 {
         return;
     }
@@ -852,7 +858,17 @@ fn draw_all_workspaces(
             cr.stroke().ok();
         }
 
-        if layout.has_tiled && geom.scale > 0.0 && row_width > 0.0 && geom.row_height > 0.0 {
+        if !layout.has_tiled && row_width > 0.0 && geom.row_height > 0.0 {
+            // Empty workspace: outline the screen where its windows would be, at the shared
+            // scale (tiles are full height, so a screen is `row_height` tall). With no windows
+            // anywhere there is no scale, so fill the row.
+            let (x, w) = if geom.scale > 0.0 {
+                (geom.viewport_anchor_x, viewport_width * geom.scale)
+            } else {
+                (PADDING, row_width)
+            };
+            draw_empty_screen(ctx, x, y, w, geom.row_height);
+        } else if layout.has_tiled && geom.scale > 0.0 && row_width > 0.0 && geom.row_height > 0.0 {
             // Screen x of workspace-x = 0.
             let x_origin = geom.viewport_anchor_x - layout.align_x * geom.scale;
 
@@ -932,6 +948,29 @@ fn draw_tiled_windows(
             draw_window_decorations(ctx, window, x, y, w, h);
         }
     }
+}
+
+/// Outline of an empty screen (a workspace with no tiled windows), inset by
+/// half the tile gap like a tile, so it's clear the workspace is empty rather
+/// than that the minimap failed to draw.
+fn draw_empty_screen(ctx: &DrawCtx<'_>, x: f64, y: f64, w: f64, h: f64) {
+    let cr = ctx.cr;
+    let appearance = &ctx.config.appearance;
+    let border = ctx.palette.border;
+    let half_gap = appearance.gap / 2.0;
+    let line = appearance.border_width.max(1.0);
+    let inset = half_gap + line / 2.0;
+    cr.set_source_rgba(border.r, border.g, border.b, border.a);
+    cr.set_line_width(line);
+    rounded_rectangle(
+        cr,
+        x + inset,
+        y + inset,
+        (w - inset * 2.0).max(1.0),
+        (h - inset * 2.0).max(1.0),
+        appearance.border_radius,
+    );
+    cr.stroke().ok();
 }
 
 /// Trace a rounded-rectangle path (no fill or stroke).
